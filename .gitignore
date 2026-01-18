@@ -1,0 +1,36 @@
+# Blacklists (use .template.txt as reference)
+blacklist_cmd.txt
+blacklist_dir.txt
+
+# Environment
+.env
+
+# Bot runtime
+bot.log
+bot.pid
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+.eggs/
+*.egg-info/
+*.egg
+dist/
+build/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
