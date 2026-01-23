@@ -5,7 +5,28 @@ PLIST_PATH := ~/Library/LaunchAgents/$(PLIST_NAME).plist
 LOG_FILE := $(PROJECT_DIR)/bot.log
 PID_FILE := $(PROJECT_DIR)/bot.pid
 
-.PHONY: dev run stop restart log install uninstall status
+.PHONY: help dev run stop restart log log-tail status register install uninstall clean
+
+help:
+	@echo "Usage: make [target]"
+	@echo ""
+	@echo "Development:"
+	@echo "  dev        Start bot in foreground (Ctrl+C to stop)"
+	@echo "  run        Start bot in background"
+	@echo "  stop       Stop background bot"
+	@echo "  restart    Restart background bot"
+	@echo "  status     Check if bot is running"
+	@echo ""
+	@echo "Logs:"
+	@echo "  log        View log file"
+	@echo "  log-tail   Follow log in real-time"
+	@echo ""
+	@echo "LaunchAgent (auto-start on login):"
+	@echo "  register   Register LaunchAgent (alias: install)"
+	@echo "  uninstall  Remove LaunchAgent"
+	@echo ""
+	@echo "Maintenance:"
+	@echo "  clean      Remove log and pid files"
 
 dev:
 	@echo "Starting bot in dev mode (Ctrl+C to stop)..."
@@ -60,6 +81,8 @@ status:
 	else \
 		echo "Bot not running"; \
 	fi
+
+register: install
 
 install:
 	@echo "Creating LaunchAgent plist..."
