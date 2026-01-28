@@ -33,29 +33,35 @@ dev:
 	cd $(PROJECT_DIR) && uv run python bot.py
 
 run:
-	@if [ -f $(PID_FILE) ] && kill -0 $$(cat $(PID_FILE)) 2>/dev/null; then \
-		echo "Bot already running (PID: $$(cat $(PID_FILE)))"; \
-	else \
-		cd $(PROJECT_DIR) && \
-		nohup uv run python bot.py >> $(LOG_FILE) 2>&1 & \
-		echo $$! > $(PID_FILE); \
-		echo "Bot started (PID: $$(cat $(PID_FILE)))"; \
+	@# Check for existing bot processes in THIS project
+	@EXISTING=$$(pgrep -f "$(PROJECT_DIR)/.venv/bin/python.*bot\.py" 2>/dev/null | head -1); \
+	if [ -n "$$EXISTING" ]; then \
+		echo "Bot already running (PID: $$EXISTING). Use 'make stop' first."; \
+		exit 1; \
 	fi
+	@cd $(PROJECT_DIR) && \
+		nohup uv run python bot.py >> $(LOG_FILE) 2>&1 & \
+		sleep 0.5; \
+		CHILD=$$(pgrep -f "$(PROJECT_DIR)/.venv/bin/python.*bot\.py" | head -1); \
+		if [ -n "$$CHILD" ]; then \
+			echo "$$CHILD" > $(PID_FILE); \
+			echo "Bot started (PID: $$CHILD)"; \
+		else \
+			echo "Failed to start bot"; \
+			exit 1; \
+		fi
 
 stop:
-	@if [ -f $(PID_FILE) ]; then \
-		PID=$$(cat $(PID_FILE)); \
-		if kill -0 $$PID 2>/dev/null; then \
-			kill $$PID; \
-			echo "Bot stopped (PID: $$PID)"; \
-		else \
-			echo "Process not running"; \
-		fi; \
-		rm -f $(PID_FILE); \
-	else \
-		echo "No PID file found"; \
-		pkill -f "python bot.py" 2>/dev/null && echo "Killed bot process" || echo "No process found"; \
-	fi
+	@# Kill bot processes for THIS project only
+	@pgrep -f "$(PROJECT_DIR)/.venv/bin/python.*bot\.py" 2>/dev/null | while read pid; do \
+		kill $$pid 2>/dev/null && echo "Killed PID $$pid"; \
+	done || true
+	@# Kill uv parent if it spawned from this directory (check via lsof cwd)
+	@pgrep -f "uv run python bot.py" 2>/dev/null | while read pid; do \
+		lsof -p $$pid 2>/dev/null | grep -q "$(PROJECT_DIR)" && kill $$pid 2>/dev/null && echo "Killed uv PID $$pid"; \
+	done || true
+	@rm -f $(PID_FILE)
+	@echo "Bot stopped"
 
 restart: stop
 	@sleep 1
@@ -76,8 +82,10 @@ log-tail:
 	fi
 
 status:
-	@if [ -f $(PID_FILE) ] && kill -0 $$(cat $(PID_FILE)) 2>/dev/null; then \
-		echo "Bot running (PID: $$(cat $(PID_FILE)))"; \
+	@PIDS=$$(pgrep -f "$(PROJECT_DIR)/.venv/bin/python.*bot\.py" 2>/dev/null); \
+	if [ -n "$$PIDS" ]; then \
+		echo "Bot running:"; \
+		ps -p $$PIDS -o pid,etime,command 2>/dev/null | tail -n +2; \
 	else \
 		echo "Bot not running"; \
 	fi

@@ -1,5 +1,7 @@
 import os
+import socket
 import subprocess
+from datetime import datetime
 
 from dotenv import load_dotenv
 from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -28,6 +30,12 @@ cwd = os.getcwd()
 
 # Bookmarks storage
 bookmarks: list[str] = []
+
+# Bot start time
+START_TIME = datetime.now()
+
+# Device name (for identifying multiple instances)
+device_name = os.environ.get("DEVICE_NAME", socket.gethostname())
 
 # Blacklists
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -101,6 +109,9 @@ async def cd_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     new_path = " ".join(context.args)
 
+    # Expand ~ and environment variables like $HOME
+    new_path = os.path.expandvars(os.path.expanduser(new_path))
+
     # Handle relative and absolute paths
     if os.path.isabs(new_path):
         target = new_path
@@ -115,7 +126,17 @@ async def cd_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     if os.path.isdir(target):
         cwd = target
-        await update.message.reply_text(f"Changed to: {cwd}")
+        keyboard = [
+            [
+                InlineKeyboardButton(
+                    "Add to bookmark", callback_data=f"bookmark_add:{cwd}"
+                )
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(
+            f"📁 Changed to: {cwd}", reply_markup=reply_markup
+        )
     else:
         await update.message.reply_text(f"Directory not found: {target}")
 
@@ -145,6 +166,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "/cd <path> - Change directory\n"
         "/home - Go to home directory\n"
         "/pwd - Show current directory\n"
+        "/status - Show server status\n"
+        "/device - View/set device name\n"
         "/bookmark - Show bookmarks\n\n"
         "Any other text runs as shell command."
     )
@@ -162,6 +185,69 @@ async def pwd_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(f"📁 {cwd}", reply_markup=reply_markup)
+
+
+async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show server status."""
+    if not is_authorized(update.effective_user.id):
+        await update.message.reply_text("Unauthorized.")
+        return
+
+    # Get hostname and IP
+    hostname = socket.gethostname()
+    try:
+        ip = socket.gethostbyname(hostname)
+    except socket.gaierror:
+        ip = "Unknown"
+
+    # Calculate uptime
+    uptime = datetime.now() - START_TIME
+    days = uptime.days
+    hours, remainder = divmod(uptime.seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+
+    if days > 0:
+        uptime_str = f"{days}d {hours}h {minutes}m {seconds}s"
+    elif hours > 0:
+        uptime_str = f"{hours}h {minutes}m {seconds}s"
+    elif minutes > 0:
+        uptime_str = f"{minutes}m {seconds}s"
+    else:
+        uptime_str = f"{seconds}s"
+
+    status_text = (
+        f"🖥️ {device_name} ({ip})\n\n"
+        f"Hostname: {hostname}\n"
+        f"CWD: {cwd}\n"
+        f"Uptime: {uptime_str}\n"
+        f"Started: {START_TIME.strftime('%Y-%m-%d %H:%M:%S')}"
+    )
+    await update.message.reply_text(status_text)
+
+
+async def device_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """View or set device name."""
+    global device_name
+
+    if not is_authorized(update.effective_user.id):
+        await update.message.reply_text("Unauthorized.")
+        return
+
+    # Get IP for display
+    hostname = socket.gethostname()
+    try:
+        ip = socket.gethostbyname(hostname)
+    except socket.gaierror:
+        ip = "Unknown"
+
+    if not context.args:
+        await update.message.reply_text(
+            f"🖥️ {device_name} ({ip})\n\nUse /device <name> to change."
+        )
+        return
+
+    device_name = " ".join(context.args)
+    await update.message.reply_text(f"✅ Device name set to: {device_name} ({ip})")
 
 
 async def bookmark_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -293,12 +379,14 @@ async def execute_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def post_init(application: Application) -> None:
     """Set up bot menu commands."""
     commands = [
+        BotCommand("status", "Show server status"),
+        BotCommand("device", "View/set device name"),
+        BotCommand("home", "Go to home directory"),
+        BotCommand("bookmark", "Show bookmarks"),
         BotCommand("start", "Start session"),
         BotCommand("help", "Show help"),
         BotCommand("cd", "Change directory"),
-        BotCommand("home", "Go to home directory"),
         BotCommand("pwd", "Show current directory"),
-        BotCommand("bookmark", "Show bookmarks"),
     ]
     await application.bot.set_my_commands(commands)
 
@@ -317,6 +405,8 @@ def main() -> None:
     app.add_handler(CommandHandler("cd", cd_command))
     app.add_handler(CommandHandler("home", home_command))
     app.add_handler(CommandHandler("pwd", pwd_command))
+    app.add_handler(CommandHandler("status", status_command))
+    app.add_handler(CommandHandler("device", device_command))
     app.add_handler(CommandHandler("bookmark", bookmark_command))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, execute_command))
