@@ -41,6 +41,14 @@ device_name = os.environ.get("DEVICE_NAME", socket.gethostname())
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
+def get_current_ip() -> str:
+    """Get current device IP."""
+    try:
+        return socket.gethostbyname(socket.gethostname())
+    except socket.gaierror:
+        return "Unknown"
+
+
 def load_blacklist(filename: str) -> set[str]:
     """Load blacklist from file."""
     path = os.path.join(SCRIPT_DIR, filename)
@@ -233,21 +241,22 @@ async def device_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text("Unauthorized.")
         return
 
-    # Get IP for display
-    hostname = socket.gethostname()
-    try:
-        ip = socket.gethostbyname(hostname)
-    except socket.gaierror:
-        ip = "Unknown"
+    current_ip = get_current_ip()
 
-    if not context.args:
+    # /device <name> - rename current device
+    if context.args:
+        device_name = " ".join(context.args)
         await update.message.reply_text(
-            f"🖥️ {device_name} ({ip})\n\nUse /device <name> to change."
+            f"✅ Device renamed to: {device_name} ({current_ip})"
         )
         return
 
-    device_name = " ".join(context.args)
-    await update.message.reply_text(f"✅ Device name set to: {device_name} ({ip})")
+    # Show current device info
+    await update.message.reply_text(
+        f"🖥️ {device_name} ({current_ip})\n\n"
+        f"Use /device <name> to rename.\n"
+        f"Set DEVICE_NAME in .env for persistent name."
+    )
 
 
 async def bookmark_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
