@@ -33,32 +33,35 @@ dev:
 	cd $(PROJECT_DIR) && uv run python bot.py
 
 run:
-	@# Check for existing bot processes in THIS project
-	@EXISTING=$$(pgrep -f "$(PROJECT_DIR)/.venv/bin/python.*bot\.py" 2>/dev/null | head -1); \
+	@# Check for existing bot processes in THIS project (check uv parent process)
+	@EXISTING=$$(lsof +D $(PROJECT_DIR) 2>/dev/null | grep "uv.*python" | awk '{print $$2}' | head -1); \
 	if [ -n "$$EXISTING" ]; then \
 		echo "Bot already running (PID: $$EXISTING). Use 'make stop' first."; \
 		exit 1; \
 	fi
 	@cd $(PROJECT_DIR) && \
 		nohup uv run python bot.py >> $(LOG_FILE) 2>&1 & \
-		sleep 0.5; \
-		CHILD=$$(pgrep -f "$(PROJECT_DIR)/.venv/bin/python.*bot\.py" | head -1); \
-		if [ -n "$$CHILD" ]; then \
-			echo "$$CHILD" > $(PID_FILE); \
-			echo "Bot started (PID: $$CHILD)"; \
+		UV_PID=$$!; \
+		sleep 2; \
+		if kill -0 $$UV_PID 2>/dev/null; then \
+			echo "$$UV_PID" > $(PID_FILE); \
+			echo "Bot started (PID: $$UV_PID)"; \
 		else \
 			echo "Failed to start bot"; \
 			exit 1; \
 		fi
 
 stop:
-	@# Kill bot processes for THIS project only
-	@pgrep -f "$(PROJECT_DIR)/.venv/bin/python.*bot\.py" 2>/dev/null | while read pid; do \
+	@# Kill bot processes for THIS project using PID file
+	@if [ -f $(PID_FILE) ]; then \
+		PID=$$(cat $(PID_FILE)); \
+		if kill -0 $$PID 2>/dev/null; then \
+			kill $$PID 2>/dev/null && echo "Killed PID $$PID"; \
+		fi; \
+	fi
+	@# Also kill any uv/python bot.py processes in this directory
+	@lsof +D $(PROJECT_DIR) 2>/dev/null | grep -E "(uv|python|Python).*bot" | awk '{print $$2}' | sort -u | while read pid; do \
 		kill $$pid 2>/dev/null && echo "Killed PID $$pid"; \
-	done || true
-	@# Kill uv parent if it spawned from this directory (check via lsof cwd)
-	@pgrep -f "uv run python bot.py" 2>/dev/null | while read pid; do \
-		lsof -p $$pid 2>/dev/null | grep -q "$(PROJECT_DIR)" && kill $$pid 2>/dev/null && echo "Killed uv PID $$pid"; \
 	done || true
 	@rm -f $(PID_FILE)
 	@echo "Bot stopped"
@@ -82,7 +85,7 @@ log-tail:
 	fi
 
 status:
-	@PIDS=$$(pgrep -f "$(PROJECT_DIR)/.venv/bin/python.*bot\.py" 2>/dev/null); \
+	@PIDS=$$(lsof +D $(PROJECT_DIR) 2>/dev/null | grep -E "(uv|python|Python).*bot" | awk '{print $$2}' | sort -u | tr '\n' ',' | sed 's/,$$//'); \
 	if [ -n "$$PIDS" ]; then \
 		echo "Bot running:"; \
 		ps -p $$PIDS -o pid,etime,command 2>/dev/null | tail -n +2; \
